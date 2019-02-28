@@ -72,22 +72,20 @@ else:
     known_indices_to_remove=f['indices_to_remove']
 
 
-tf.reset_default_graph()
-with tf.Graph().as_default():
-    with tf.Session() as sess:
-        attack = CarliniL2(model.sess, model, batch_size=9, max_iterations=1000, confidence=0)
 
-        inputs_to_attack, targets_to_attack = generate_data(data_sets, samples=1, targeted=True,start=0, inception=False)
+attack = CarliniL2(model.sess, model, batch_size=9, max_iterations=1000, confidence=0)
+
+inputs_to_attack, targets_to_attack = generate_data(data_sets, samples=1, targeted=True,start=0, inception=False)
 
 
-        adv_name='adv_attack_dataset.npz'
-        if not os.path.exists(adv_name):
-            adv = attack.attack(inputs_to_attack, targets_to_attack)
-            print('saving adversarial attack dataset...')
-            np.savez(adv_name, adv=adv)
-            print("Took",timeend-timestart,"seconds to run",len(inputs),"samples.")
+adv_name='adv_attack_dataset.npz'
+if not os.path.exists(adv_name):
+    adv = attack.attack(inputs_to_attack, targets_to_attack)
+    print('saving adversarial attack dataset...')
+    np.savez(adv_name, adv=adv)
+    print("Took",timeend-timestart,"seconds to run",len(inputs),"samples.")
 
-        print('loading adversarial attack dataset...')            
+print('loading adversarial attack dataset...')            
 
 
 f=np.load(adv_name)
