@@ -1,0 +1,6 @@
+model_checkpoint_path: "mnist_small_all_cnn_c-checkpoint-499999"
+all_model_checkpoint_paths: "mnist_small_all_cnn_c-checkpoint-99999"
+all_model_checkpoint_paths: "mnist_small_all_cnn_c-checkpoint-199999"
+all_model_checkpoint_paths: "mnist_small_all_cnn_c-checkpoint-299999"
+all_model_checkpoint_paths: "mnist_small_all_cnn_c-checkpoint-399999"
+all_model_checkpoint_paths: "mnist_small_all_cnn_c-checkpoint-499999"
