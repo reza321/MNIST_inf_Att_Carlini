@@ -9,36 +9,37 @@ import sys
 import tensorflow as tf
 import numpy as np
 
-
 def generate_data(data, samples, targeted=True, start=0, inception=False):
+    """
+    Generate the input data to the attack algorithm.
+
+    data: the images to attack
+    samples: number of samples to use
+    targeted: if true, construct targeted attacks, otherwise untargeted attacks
+    start: offset into data to use
+    inception: if targeted and inception, randomly sample 100 targets intead of 1000
+    """
     inputs = []
     targets = []
-    
-    data_train_x=data.train.x.reshape((-1,28,28,1))
-    len_train_labels=np.max(data.train.labels) + 1
-    data_train_labels=np.eye(len_train_labels)[data.train.labels]
 
+    for i in range(samples):
 
-    data_test_x=data.test.x.reshape((-1,28,28,1))
-    len_test_labels=np.max(data.test.labels) + 1
-    data_test_labels=np.eye(len_test_labels)[data.test.labels]
-
-    # print(data_train_x.shape)
-    # print(data_train_labels.shape)
-    # print(data_test_x.shape)
-    # print(data_test_labels.shape)
-    for i in range(samples):        
-        seq = range(data_test_labels.shape[1])
+        n_values = np.max(data.test.labels) + 1
+        data_test_label_hot=np.eye(n_values)[data.test.labels]
+        seq = range(data_test_label_hot.shape[1])
         for j in seq:                    
-            if (j == np.argmax(data_test_labels[start+i])) and (inception == False):
+            if (j == np.argmax(data.test.labels[start+i])) and (inception == False):
                 continue
-            inputs.append(data_test_x[start+i])
-            targets.append(np.eye(data_test_labels.shape[1])[j])
+            inputs.append(data.test.x[start+i])
+            targets.append(np.eye(data_test_label_hot.shape[1])[j])
 
     inputs = np.array(inputs)
     targets = np.array(targets)
 
     return inputs, targets
+
+
+
 
 class CarliniL2:
     def __init__(self, sess, model, batch_size=1, confidence = 0,
@@ -47,10 +48,35 @@ class CarliniL2:
                  abort_early = True, 
                  initial_const = 1e-3,
                  boxmin = -0.5, boxmax = 0.5):
+        """
+        The L_2 optimized attack. 
 
-        self.num_channels = 1
-        self.image_size = 28
-        self.num_labels = 10
+        This attack is the most efficient and should be used as the primary 
+        attack to evaluate potential defenses.
+
+        Returns adversarial examples for the supplied model.
+
+        confidence: Confidence of adversarial examples: higher produces examples
+          that are farther away, but more strongly classified as adversarial.
+        batch_size: Number of attacks to run simultaneously.
+        targeted: True if we should perform a targetted attack, False otherwise.
+        learning_rate: The learning rate for the attack algorithm. Smaller values
+          produce better results but are slower to converge.
+        binary_search_steps: The number of times we perform binary search to
+          find the optimal tradeoff-constant between distance and confidence. 
+        max_iterations: The maximum number of iterations. Larger values are more
+          accurate; setting too small will require a large learning rate and will
+          produce poor results.
+        abort_early: If true, allows early aborts if gradient descent gets stuck.
+        initial_const: The initial tradeoff-constant to use to tune the relative
+          importance of distance and confidence. If binary_search_steps is large,
+          the initial constant is not important.
+        boxmin: Minimum pixel value (default -0.5).
+        boxmax: Maximum pixel value (default 0.5).
+        """
+
+        image_size, num_channels, num_labels = model.image_size, model.num_channels, model.num_classes
+
         self.sess = sess
         self.TARGETED = targeted
         self.LEARNING_RATE = learning_rate
@@ -65,19 +91,19 @@ class CarliniL2:
 
         self.I_KNOW_WHAT_I_AM_DOING_AND_WANT_TO_OVERRIDE_THE_PRESOFTMAX_CHECK = False
 
-        shape = (batch_size,self.image_size,self.image_size,self.num_channels)
+        shape = (batch_size,image_size,image_size,num_channels)
         
         # the variable we're going to optimize over
         modifier = tf.Variable(np.zeros(shape,dtype=np.float32))
 
         # these are variables to be more efficient in sending data to tf
         self.timg = tf.Variable(np.zeros(shape), dtype=tf.float32)
-        self.tlab = tf.Variable(np.zeros((batch_size,self.num_labels)), dtype=tf.float32)
+        self.tlab = tf.Variable(np.zeros((batch_size,num_labels)), dtype=tf.float32)
         self.const = tf.Variable(np.zeros(batch_size), dtype=tf.float32)
 
         # and here's what we use to assign them
         self.assign_timg = tf.placeholder(tf.float32, shape)
-        self.assign_tlab = tf.placeholder(tf.float32, (batch_size,self.num_labels))
+        self.assign_tlab = tf.placeholder(tf.float32, (batch_size,num_labels))
         self.assign_const = tf.placeholder(tf.float32, [batch_size])
         
         # the resulting image, tanh'd to keep bounded from boxmin to boxmax
@@ -86,8 +112,11 @@ class CarliniL2:
         self.newimg = tf.tanh(modifier + self.timg) * self.boxmul + self.boxplus
         
         # prediction BEFORE-SOFTMAX of the model
-        self.output = model.predict(self.newimg)
-        
+        self.output =model.inference(self.newimg)
+
+        input_placeholder=tf.placeholder(tf.float32,shape= [1,image_size,image_size,num_channels])
+        self.predict_class=model.inference(input_placeholder)
+
 
 
         # distance to the input data
@@ -122,7 +151,7 @@ class CarliniL2:
         self.setup.append(self.tlab.assign(self.assign_tlab))
         self.setup.append(self.const.assign(self.assign_const))
         
-        self.init = tf.variables_initializer(var_list=[modifier]+new_vars)
+        self.init = tf.global_variables_initializer()
 
     def attack(self, imgs, targets):
         """
@@ -197,9 +226,7 @@ class CarliniL2:
                 if np.all(scores>=-.0001) and np.all(scores <= 1.0001):
                     if np.allclose(np.sum(scores,axis=1), 1.0, atol=1e-3):
                         if not self.I_KNOW_WHAT_I_AM_DOING_AND_WANT_TO_OVERRIDE_THE_PRESOFTMAX_CHECK:
-                            raise Exception("The output of model.predict should return the pre-softmax layer. \
-                                It looks like you are returning the probability vector (post-softmax). If you are sure you want to do that, \
-                                set attack.I_KNOW_WHAT_I_AM_DOING_AND_WANT_TO_OVERRIDE_THE_PRESOFTMAX_CHECK = True")
+                            raise Exception("The output of model.predict should return the pre-softmax layer. It looks like you are returning the probability vector (post-softmax). If you are sure you want to do that, set attack.I_KNOW_WHAT_I_AM_DOING_AND_WANT_TO_OVERRIDE_THE_PRESOFTMAX_CHECK = True")
                 
                 # print out the losses every 10%
                 if iteration%(self.MAX_ITERATIONS//10) == 0:
@@ -240,3 +267,7 @@ class CarliniL2:
         # return the best solution found
         o_bestl2 = np.array(o_bestl2)
         return o_bestattack
+
+    def predict_classes(self,inputX):
+        input_class=self.sess.run(self.predict_class,feed_dict={inputX})
+        return input_class

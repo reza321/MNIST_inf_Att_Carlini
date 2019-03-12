@@ -102,6 +102,7 @@ class GenericNeuralNet(object):
         
         if not os.path.exists(self.train_dir):
             os.makedirs(self.train_dir)
+        
 
         # Initialize session
         config = tf.ConfigProto()        
@@ -169,9 +170,7 @@ class GenericNeuralNet(object):
         if self.adversarial_loss is not None:
             self.grad_adversarial_loss_op = tf.gradients(self.adversarial_loss, self.params)
 
-    def predict(self,input_X):
-        pred=self.logits()
-        return pred       
+      
 
     def get_vec_to_list_fn(self):
         params_val = self.sess.run(self.params)
@@ -375,19 +374,35 @@ class GenericNeuralNet(object):
                 feed_dict = self.all_train_feed_dict          
                 _, loss_val = sess.run([self.train_sgd_op, self.total_loss], feed_dict=feed_dict)          
 
-            duration = time.time() - start_time
+            duration = time.time() - start_time                    
+
 
             if verbose:
                 if step % 100 == 0:
                     # Print status to stdout.
                     print('Step %d: loss = %.8f (%.3f sec)' % (step, loss_val, duration))
 
+
             # Save a checkpoint and evaluate the model periodically.
             if (step + 1) % 100000 == 0 or (step + 1) == num_steps:
                 if save_checkpoints: self.saver.save(sess, self.checkpoint_file, global_step=step)
+                
                 if verbose: self.print_model_eval()
+                
+
+                print("Sanity Check for some test points when the model is saved:")
+                feed_dict = {self.input_placeholder : self.data_sets.test.x[10:12],
+                             self.labels_placeholder: self.data_sets.test.labels[10:12]}                
+                print(self.sess.run([self.accuracy_op], feed_dict=feed_dict))
 
 
+
+    def get_checkpoint(self):
+        return self.checkpoint_file
+
+
+
+        
     def load_checkpoint(self, iter_to_load, do_checks=True):
         checkpoint_to_load = "%s-%s" % (self.checkpoint_file, iter_to_load) 
         self.saver.restore(self.sess, checkpoint_to_load)

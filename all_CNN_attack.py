@@ -20,11 +20,48 @@ import time
 import IPython
 import tensorflow as tf
 import math
-
-from genericNeuralNet import GenericNeuralNet, variable, variable_with_weight_decay
 from dataset import DataSet
 
 tf.random.set_random_seed(10)    
+
+def variable(name, shape, initializer):
+    dtype = tf.float32
+    var = tf.get_variable(
+        name, 
+        shape, 
+        initializer=initializer, 
+        dtype=dtype)
+    return var
+
+def variable_with_weight_decay(name, shape, stddev, wd):
+    """Helper to create an initialized Variable with weight decay.
+    Note that the Variable is initialized with a truncated normal distribution.
+    A weight decay is added only if one is specified.
+    Args:
+      name: name of the variable
+      shape: list of ints
+      stddev: standard deviation of a truncated Gaussian
+      wd: add L2Loss weight decay multiplied by this float. If None, weight
+          decay is not added for this Variable.
+    Returns:
+      Variable Tensor
+    """
+    dtype = tf.float32
+    var = variable(
+        name, 
+        shape, 
+        initializer=tf.truncated_normal_initializer(
+            stddev=stddev, 
+            dtype=dtype,seed=10))
+ 
+    if wd is not None:
+      weight_decay = tf.multiply(tf.nn.l2_loss(var), wd, name='weight_loss')
+      tf.add_to_collection('losses', weight_decay)
+    return var
+
+
+
+
 def conv2d(x, W, r):
     return tf.nn.conv2d(x, W, strides=[1, r, r, 1], padding='VALID')
 
@@ -32,32 +69,34 @@ def softplus(x):
     return tf.log(tf.exp(x) + 1)
 
 
-class All_CNN_C(GenericNeuralNet):
+class All_CNN_C_Attack():
 
-    def __init__(self, input_side, input_channels, conv_patch_size, hidden1_units, hidden2_units, hidden3_units, weight_decay, **kwargs):
-        self.weight_decay = weight_decay
-        self.input_side = input_side
-        self.input_channels = input_channels
-        self.input_dim = self.input_side * self.input_side * self.input_channels
+    def __init__(self, image_size, num_channels, conv_patch_size, hidden1_units, hidden2_units, hidden3_units, weight_decay,num_classes):
+
+        self.image_size = image_size
+        self.num_channels = num_channels
         self.conv_patch_size = conv_patch_size
         self.hidden1_units = hidden1_units
         self.hidden2_units = hidden2_units
         self.hidden3_units = hidden3_units
+        self.weight_decay = weight_decay
+        self.input_dim = self.image_size * self.image_size * self.num_channels
+        self.num_classes=num_classes
+        self.input_placeholder, self.labels_placeholder=self.placeholder_inputs()
 
-        super(All_CNN_C, self).__init__(**kwargs)
 
 
-    def conv2d_softplus(self, input_x, conv_patch_size, input_channels, output_channels, stride):
+    def conv2d_softplus(self, input_x, conv_patch_size, num_channels, output_channels, stride):
         weights = variable_with_weight_decay(
             'weights', 
-            [conv_patch_size * conv_patch_size * input_channels * output_channels],
-            stddev=2.0 / math.sqrt(float(conv_patch_size * conv_patch_size * input_channels)),
+            [conv_patch_size * conv_patch_size * num_channels * output_channels],
+            stddev=2.0 / math.sqrt(float(conv_patch_size * conv_patch_size * num_channels)),
             wd=self.weight_decay)
         biases = variable(
             'biases',
             [output_channels],
             tf.constant_initializer(0.0))
-        weights_reshaped = tf.reshape(weights, [conv_patch_size, conv_patch_size, input_channels, output_channels])
+        weights_reshaped = tf.reshape(weights, [conv_patch_size, conv_patch_size, num_channels, output_channels])
         hidden = tf.nn.tanh(conv2d(input_x, weights_reshaped, stride) + biases)
 
         return hidden
@@ -74,34 +113,15 @@ class All_CNN_C(GenericNeuralNet):
         return all_params        
         
 
-    def retrain(self, num_steps, feed_dict):        
 
-        retrain_dataset = DataSet(feed_dict[self.input_placeholder], feed_dict[self.labels_placeholder])
-
-        for step in xrange(num_steps):   
-            iter_feed_dict = self.fill_feed_dict_with_batch(retrain_dataset)
-            self.sess.run(self.train_op, feed_dict=iter_feed_dict)
+    def load_model(self):        
 
 
-    def placeholder_inputs(self):
-        input_placeholder = tf.placeholder(
-            tf.float32, 
-            shape=(None, self.input_dim),
-            name='input_placeholder')
-        labels_placeholder = tf.placeholder(
-            tf.int32,             
-            shape=(None),
-            name='labels_placeholder')
-        return input_placeholder, labels_placeholder
-
-
-    def inference(self, input_x):        
-
-        input_reshaped = tf.reshape(input_x, [-1, self.input_side, self.input_side, self.input_channels])
+        input_reshaped = tf.reshape(self.input_placeholder, [-1, self.image_size, self.image_size, self.num_channels])
         
         # Hidden 1
         with tf.variable_scope('h1_a'):
-            h1_a = self.conv2d_softplus(input_reshaped, self.conv_patch_size, self.input_channels, self.hidden1_units, stride=1)
+            h1_a = self.conv2d_softplus(input_reshaped, self.conv_patch_size, self.num_channels, self.hidden1_units, stride=1)
             
         with tf.variable_scope('h1_c'):
             h1_c = self.conv2d_softplus(h1_a, self.conv_patch_size, self.hidden1_units, self.hidden1_units, stride=2)
@@ -134,15 +154,29 @@ class All_CNN_C(GenericNeuralNet):
                 'biases',
                 [self.num_classes],
                 tf.constant_initializer(0.0))
+            self.logits = tf.matmul(h3_d, tf.reshape(weights, [last_layer_units, self.num_classes])) + biases
+        return self.logits
 
-            logits = tf.matmul(h3_d, tf.reshape(weights, [last_layer_units, self.num_classes])) + biases
-            
-        return logits
 
-    def predictions(self, logits):
-        preds = tf.nn.softmax(logits, name='preds')
-        return preds
+    def fill_feed_dict(self, data_set):
+        feed_dict = {
+            self.input_placeholder: data_set.x,
+            self.labels_placeholder: data_set.labels
+        }
+        return feed_dict
 
-    def predict(self,inputX):
-        pred=self.inference(inputX)
-        return pred
+    def get_accuracy_op(self):
+        correct = tf.nn.in_top_k(self.logits, self.labels_placeholder, 1)
+        return tf.reduce_sum(tf.cast(correct, tf.int32)) / tf.shape(self.labels_placeholder)[0]
+
+
+    def placeholder_inputs(self):
+        input_placeholder = tf.placeholder(
+            tf.float32, 
+            shape=(None, self.input_dim),
+            name='input_placeholder')
+        labels_placeholder = tf.placeholder(
+            tf.int32,             
+            shape=(None),
+            name='labels_placeholder')
+        return input_placeholder, labels_placeholder
