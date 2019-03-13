@@ -116,7 +116,6 @@ class All_CNN_C_Attack():
 
     def load_model(self):        
 
-
         input_reshaped = tf.reshape(self.input_placeholder, [-1, self.image_size, self.image_size, self.num_channels])
         
         # Hidden 1
@@ -157,14 +156,6 @@ class All_CNN_C_Attack():
             self.logits = tf.matmul(h3_d, tf.reshape(weights, [last_layer_units, self.num_classes])) + biases
         return self.logits
 
-
-    def fill_feed_dict(self, data_set):
-        feed_dict = {
-            self.input_placeholder: data_set.x,
-            self.labels_placeholder: data_set.labels
-        }
-        return feed_dict
-
     def get_accuracy_op(self):
         correct = tf.nn.in_top_k(self.logits, self.labels_placeholder, 1)
         return tf.reduce_sum(tf.cast(correct, tf.int32)) / tf.shape(self.labels_placeholder)[0]
@@ -180,3 +171,8 @@ class All_CNN_C_Attack():
             shape=(None),
             name='labels_placeholder')
         return input_placeholder, labels_placeholder
+    
+    def predict_classes(self,inputX):
+        #model.input_placeholder=tf.placeholder(tf.float32,shape= [1,image_size,image_size,num_channels])
+        
+        return input_class        

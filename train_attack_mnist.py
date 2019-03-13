@@ -101,46 +101,40 @@ with tf.Session(graph = g) as sess:
     sess.run(tf.global_variables_initializer())
     checkpoint_to_load = "%s-%s" % (checkpoint_file, iter_to_load) 
     saver.restore(sess, checkpoint_to_load)
+    print("Check if accuracy is the same as the saved model:")
+    print(sess.run(logits,feed_dict={model_to_be_attacked.input_placeholder:data_sets.test.x[10:12],
+                            model_to_be_attacked.labels_placeholder:data_sets.test.labels[10:12]}).shape)
 
-    print(sess.run([acc],feed_dict={model_to_be_attacked.input_placeholder:data_sets.test.x[10:12],
-                             model_to_be_attacked.labels_placeholder:data_sets.test.labels[10:12]}))
+    exit()
+    attack = CarliniL2(sess,model_to_be_attacked,logits, batch_size=9, max_iterations=1000, confidence=0)
 
+    inputs_to_attack, targets_to_attack = generate_data(data_sets, samples=1, targeted=True,start=0, inception=False)
+    inputs_to_attack=inputs_to_attack.reshape(inputs_to_attack.shape[0], 28, 28, 1)
+
+    timestart = time.time()
+
+    adv_name='adv_attack_dataset.npz'
+    if not os.path.exists(adv_name):
+        adv = attack.attack(inputs_to_attack, targets_to_attack)
+        print('saving adversarial attack dataset...')
+        np.savez(adv_name, adv=adv)
+        timeend = time.time()
+        print("Took",timeend-timestart,"seconds to run",len(inputs),"samples.")
+
+    print('loading adversarial attack dataset...')            
+
+
+    f=np.load(adv_name)
+    adv=f['adv']
+    print(adv.shape)
+
+
+    adv_shape=[1,adv.shape[1],adv.shape[2],adv.shape[3]]
+    input_shape=[1,inputs_to_attack.shape[1],inputs_to_attack.shape[2],inputs_to_attack.shape[3]]
+    print(attack.predict_classes(inputs_to_attack[0].reshape(input_shape)))
+    print(attack.predict_classes(adv[0].reshape(adv_shape)))
 
 exit()
-
-attack = CarliniL2(sess, model_to_be_attacked, batch_size=9, max_iterations=1000, confidence=0)
-
-
-inputs_to_attack, targets_to_attack = generate_data(data_sets, samples=1, targeted=True,start=0, inception=False)
-inputs_to_attack=inputs_to_attack.reshape(inputs_to_attack.shape[0], 28, 28, 1)
-
-
-
-timestart = time.time()
-
-adv_name='adv_attack_dataset.npz'
-if not os.path.exists(adv_name):
-    adv = attack.attack(inputs_to_attack, targets_to_attack)
-    print('saving adversarial attack dataset...')
-    np.savez(adv_name, adv=adv)
-    timeend = time.time()
-    print("Took",timeend-timestart,"seconds to run",len(inputs),"samples.")
-
-print('loading adversarial attack dataset...')            
-
-
-f=np.load(adv_name)
-adv=f['adv']
-print(adv.shape)
-
-
-adv_shape=[1,adv.shape[1],adv.shape[2],adv.shape[3]]
-input_shape=[1,inputs_to_attack.shape[1],inputs_to_attack.shape[2],inputs_to_attack.shape[3]]
-print(attack.predict_classes(inputs_to_attack[0].reshape(input_shape)))
-print(attack.predict_classes(adv[0].reshape(adv_shape)))
-exit()
-
-
 for i in range(len(adv)):
     d=inputs_to_attack[i].reshape((28,28))
     e=adv[i].reshape((28,28))

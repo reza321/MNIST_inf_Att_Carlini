@@ -42,7 +42,7 @@ def generate_data(data, samples, targeted=True, start=0, inception=False):
 
 
 class CarliniL2:
-    def __init__(self, sess, model, batch_size=1, confidence = 0,
+    def __init__(self, sess, model,logits, batch_size=1, confidence = 0,
                  targeted = True, learning_rate = 1e-2,
                  binary_search_steps = 9, max_iterations = 10000,
                  abort_early = True, 
@@ -74,9 +74,8 @@ class CarliniL2:
         boxmin: Minimum pixel value (default -0.5).
         boxmax: Maximum pixel value (default 0.5).
         """
-
-        image_size, num_channels, num_labels = model.image_size, model.num_channels, model.num_classes
-
+        self.model=model
+        image_size, num_channels, num_labels = self.model.image_size, self.model.num_channels, self.model.num_classes
         self.sess = sess
         self.TARGETED = targeted
         self.LEARNING_RATE = learning_rate
@@ -111,13 +110,11 @@ class CarliniL2:
         self.boxplus = (boxmin + boxmax) / 2.
         self.newimg = tf.tanh(modifier + self.timg) * self.boxmul + self.boxplus
         
+        
+
         # prediction BEFORE-SOFTMAX of the model
-        self.output =model.inference(self.newimg)
-
-        input_placeholder=tf.placeholder(tf.float32,shape= [1,image_size,image_size,num_channels])
-        self.predict_class=model.inference(input_placeholder)
-
-
+        self.model.input_placeholder=self.newimg
+        self.output =logits
 
         # distance to the input data
         self.l2dist = tf.reduce_sum(tf.square(self.newimg-(tf.tanh(self.timg) * self.boxmul + self.boxplus)),[1,2,3])
@@ -268,6 +265,3 @@ class CarliniL2:
         o_bestl2 = np.array(o_bestl2)
         return o_bestattack
 
-    def predict_classes(self,inputX):
-        input_class=self.sess.run(self.predict_class,feed_dict={inputX})
-        return input_class
