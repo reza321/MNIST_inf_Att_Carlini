@@ -374,6 +374,7 @@ class GenericNeuralNet(object):
                 feed_dict = self.all_train_feed_dict          
                 _, loss_val = sess.run([self.train_sgd_op, self.total_loss], feed_dict=feed_dict)          
 
+
             duration = time.time() - start_time                    
 
 

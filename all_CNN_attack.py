@@ -103,6 +103,7 @@ class All_CNN_C_Attack():
 
 
 
+
     def get_all_params(self):
         all_params = []
         #for layer in ['h1_a','h1_c','h2_a', 'h2_c', 'h3_a', 'h3_c', 'softmax_linear']:        
@@ -143,7 +144,6 @@ class All_CNN_C_Attack():
         h3_d = tf.reduce_mean(h3_c, axis=[1, 2])
         
         with tf.variable_scope('softmax_linear'):
-
             weights = variable_with_weight_decay(
                 'weights', 
                 [last_layer_units * self.num_classes],

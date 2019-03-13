@@ -102,6 +102,7 @@ with tf.Session(graph = g) as sess:
     checkpoint_to_load = "%s-%s" % (checkpoint_file, iter_to_load) 
     saver.restore(sess, checkpoint_to_load)
     print("Check if accuracy is the same as the saved model:")
+
     print(sess.run(logits,feed_dict={model_to_be_attacked.input_placeholder:data_sets.test.x[10:12],
                             model_to_be_attacked.labels_placeholder:data_sets.test.labels[10:12]}).shape)
 
@@ -135,6 +136,8 @@ with tf.Session(graph = g) as sess:
     print(attack.predict_classes(adv[0].reshape(adv_shape)))
 
 exit()
+
+
 for i in range(len(adv)):
     d=inputs_to_attack[i].reshape((28,28))
     e=adv[i].reshape((28,28))
